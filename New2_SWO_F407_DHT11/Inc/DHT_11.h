@@ -1,4 +1,5 @@
 #include "stm32f4xx_hal.h"
+#include "stm32f4xx_hal_tim.h"
 #include "stdio.h"
 #include "main.h"
 #define DHT11_PORT GPIOA						//Pin read/Write Data from DHT11 Sensor
