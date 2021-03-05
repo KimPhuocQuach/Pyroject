@@ -1,12 +1,12 @@
 
 /* This code for STM32F103C8
 Hardware setup: PA0 -> GPIO_EXTIO -> Pull up initialize, Falling Edge Trigger
-								PA1 -> GPIO_Input -> Pull up initialize,
-								That means button is connected to GND, through RES10K to the PA0,1
-								PA2 -> GPIO_Output -> Output level (initial) low
-																			Mode - Output Push Pull
-																			No pull up/down
-																			Max. Output Speed - High
+		PA1 -> GPIO_Input -> Pull up initialize,
+				That means button is connected to GND, through RES10K to the PA0,1
+		PA2 -> GPIO_Output -> Output level (initial) low
+					Mode - Output Push Pull
+					No pull up/down
+					Max. Output Speed - High
 */
 
 #include "main.h"
@@ -15,33 +15,29 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin);
 
-uint8_t count, state; 
-
+uint8_t count, state;
 
 int main(void)
 {
-  HAL_Init();
+	HAL_Init();
 	SystemClock_Config();
 	MX_GPIO_Init();
 
 	count = 0;
-	state = HAL_GPIO_ReadPin(GPIOA,GPIO_PIN_2);
+	//state = HAL_GPIO_ReadPin(GPIOA,GPIO_PIN_2);
   while (1)
   {		
 		// Code for using GPIO read the state of button
 		// Can not increment "count"
-		
 		if(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_1) == 0)
 		{
-			
 			count ++;
 			if (count > 20)
 				count = 0;
-			HAL_Delay(200);																			//Bound effect avoidance
+			HAL_Delay(200);							//Bound effect avoidance
 			while(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_1) == 0);		//Bound effect avoidance
-			HAL_Delay(100);																			//Bound effect avoidance
+			HAL_Delay(100);							//Bound effect avoidance
 			HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_2);
-			
 		}
     
 	}
@@ -125,9 +121,8 @@ static void MX_GPIO_Init(void)
 	if(GPIO_Pin == GPIO_PIN_0)
 	{
 		
-		//HAL_Delay(100);																			//Can not use Hal_Delay
+		//HAL_Delay(100);						//Can not use Hal_Delay
 		count++;
-		
 		//while(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == 0);		//Bound effect avoidance
 		HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_2);
 	}
