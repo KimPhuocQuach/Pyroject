@@ -12,8 +12,8 @@ static void MX_I2C1_Init(void);
 static void MX_TIM6_Init(void);
 
 typedef struct {
-	//err = 0: can not get data, err = 1: save into temp and rh
-	uint8_t dht22_err;		
+	//err = false: can not get data, err = true: save into temp and rh
+	bool dht22_err;		
 	float temp;
 	float rh;
 	uint16_t lx;
@@ -21,15 +21,16 @@ typedef struct {
 	uint8_t mode;
 	uint8_t state;
 	bool scan_now;
+	uint8_t sleep;	//true: sleep in ... mins after ON, false: relay can be on
 } controller;
 
-char buffer[10];
-
+char buffer[10];	//Cho lcdshow
 uint8_t read_dht22(float* t, float* rh);
 uint16_t read_bh1750(BH1750_device_t* test_dev);
-void lcdshow(controller* c);
-
-
+void lcd_show(controller* c);
+void relay_on(controller* ht);
+void relay_off(controller* ht);
+void relay_sleep(controller* ht);
 int main(void)
 {
   HAL_Init();
@@ -55,39 +56,19 @@ int main(void)
   BH1750_init_dev(test_dev);
 	init_DHT22();
 	controller* ht = (controller*)calloc(1, sizeof(controller));
-	ht->state = 0; ht->mode = 0;
+	ht->state = 0; ht->mode = 0; ht->sleep = 0;
   while (1)
   {
 		//Sensors Reading
 		ht->dht22_err = read_dht22(&(ht->temp),&(ht->rh));
 		ht->lx = read_bh1750(test_dev);
 
-		//Button triggering and Relay 
-		if(!HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_1)){			
-			//Button PRESS (Auto -> Manual)
-			HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2, GPIO_PIN_SET);
-			ht->mode = 1; ht->state = 1;
-			ht->scan_now = true;//Refresh LCD right now
-		}else{
-			//Sensor Conditioning (Still Auto)
-			if((ht->temp > 40 || ht->rh < 50 || ht->lx > 300) && ht->rh > 0){
-				HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2, GPIO_PIN_SET);
-				ht->state = 1;
-				ht->scan_now = true;
-			}
-		}
-		//Turn OFF the relay after 2 mins. (Back to Auto)
-		static uint32_t lastRead = 0;
-		uint32_t now = HAL_GetTick();
-		if((uint32_t)(now - lastRead) > 120000 && ht->state){
-			HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2, GPIO_PIN_RESET);
-			ht->mode = 0; ht->state = 0;
-			ht->scan_now = true;
-			lastRead = HAL_GetTick();
-		}
+		relay_on(ht);
+		relay_off(ht);
+		relay_sleep(ht);
 		
 		//LCD_2004 Displaying
-		lcdshow(ht);
+		lcd_show(ht);
   }
   /* USER CODE END 3 */
 }
@@ -241,7 +222,48 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 
-void lcdshow(controller* c){
+void relay_sleep(controller* ht){
+	//Relay Sleep Mode
+	static uint32_t last = 0;
+	if((uint32_t)(HAL_GetTick() - last) > 20000){
+		if(ht->sleep){						//The time has to be larger than relay_off
+			ht->sleep = 0;
+		}
+		last = HAL_GetTick();
+	}
+}
+
+void relay_off(controller* ht){
+	//Turn OFF the relay after 1 mins. (Back to Auto or already Auto)
+	static uint32_t last1 = 0;
+	if((uint32_t)(HAL_GetTick() - last1) > 10000){
+		if(ht->state){
+			HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2, GPIO_PIN_RESET);
+			ht->mode = 0; ht->state = 0;
+			ht->scan_now = true;
+			ht->sleep = 1;					//Turn ON sleep-mode flat
+		}
+		last1 = HAL_GetTick();
+	}
+}
+
+void relay_on(controller* ht){
+	//Button triggering and Relay
+	if(!HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_1) && !(ht->sleep)){
+	//Button PRESS (Auto -> Manual)
+		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2, GPIO_PIN_SET);
+		ht->mode = 1; ht->state = 1;
+		ht->scan_now = true;//Refresh LCD right now
+	}else{
+	//Sensor Conditioning (Still Auto)
+		if((ht->temp > 40 || ht->rh < 40 || ht->lx > 200) && ht->rh > 0 && !(ht->sleep)){
+			HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2, GPIO_PIN_SET);
+			ht->state = 1;//ht->scan_now = true;
+		}
+	}
+}
+
+void lcd_show(controller* c){
 	static uint32_t lastScan = 0;
   if ((HAL_GetTick() - lastScan > 1000) || c->scan_now){
 		lcd_send_cmd(0x80|0x03);
@@ -294,13 +316,13 @@ void lcdshow(controller* c){
 	}
 }
 
-uint8_t read_dht22(float* t, float* rh){
-	uint8_t d[5], ret = 1;
+bool read_dht22(float* t, float* rh){
+	uint8_t d[5]; 
+	bool ret;
 	uint16_t cal;
-	static uint32_t lastRead = 0;
-	uint32_t now = HAL_GetTick();
+	static uint32_t lastRead_1 = 0;
 	//Max Sampling Freq. of DHT22 = 2 sec.
-	if((uint32_t)(now - lastRead) > 2000){
+	if((uint32_t)(HAL_GetTick() - lastRead_1) > 2000){
 		if(DHT22_Check_Response(d)){
 			//Temp. Calculation
 			cal = d[2]&0x7F; cal*=256;
@@ -310,23 +332,22 @@ uint8_t read_dht22(float* t, float* rh){
 			cal = d[0]; cal*=256;
 			cal += d[1]; *rh = cal*0.1;
 			//Read OK
-			ret = 1;
+			ret = true;
 		}
 		else {
-			ret = 0;//Read not OK -> ERROR
+			ret = false;//Read not OK -> ERROR
 		}
-		lastRead = HAL_GetTick();
+		lastRead_1 = HAL_GetTick();
 	}
 	return ret;
 }
 
 uint16_t read_bh1750(BH1750_device_t* test_dev){
-	static uint32_t lastRead = 0;
-	uint32_t now = HAL_GetTick();
-	if((uint32_t)(now - lastRead) > 200)//200ms
+	static uint32_t lastRead_2 = 0;
+	if((uint32_t)(HAL_GetTick() - lastRead_2) > 200)//200ms
 	{
 		test_dev->poll(test_dev);//Read and compute luminosity
-		lastRead = HAL_GetTick();
+		lastRead_2 = HAL_GetTick();
 	}
 	return test_dev->value;
 }
