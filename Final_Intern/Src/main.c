@@ -54,6 +54,7 @@ uint8_t BCD2DEC(uint8_t data);
 uint8_t DEC2BCD(uint8_t data);
 void ds1307_cal(controller* ht);
 
+//Main firmware functions
 uint8_t read_dht22(float* t, float* rh);
 uint16_t read_bh1750(BH1750_device_t* test_dev);
 void lcd_show(controller* c);
@@ -65,6 +66,7 @@ void receive_uart_1(controller* ht);//Send cmd button relay on/off
 void receive_uart_2(controller* ht);//Reset time RTC based on PC (GUI)
 void receive_uart_3(controller* ht);//SetTime for relay on (Just start time)
 
+//microSD variables and functions
 FATFS fs;
 FIL fil; 
 FRESULT fresult;
@@ -127,13 +129,13 @@ int main(void)
 		ht->soil = cal_mw(adc);
 		ds1307_cal(ht);
 		
-		receive_uart_1(ht);//Send cmd button relay on/off
-		receive_uart_3(ht);//SetTime for relay on (Just start time)
-		receive_uart_2(ht);//Reset time RTC based on PC (GUI)
+		receive_uart_1(ht);	//Send cmd button relay on/off
+		receive_uart_3(ht);	//SetTime for relay on (Just start time)
+		receive_uart_2(ht);	//Reset time RTC based on PC (GUI)
 		
 		relay_on(ht);
 		relay_off(ht);
-		send_uart(ht);		//8 bits data + 1 bit EVEN parity
+		send_uart(ht);			//8 bits data + 1 bit EVEN parity
 		lcd_show(ht);
 		
 		write_microSD(ht);
@@ -534,8 +536,7 @@ void ds1307_cal(controller* ht){
 		HAL_I2C_Mem_Read_IT(&hi2c1,DS3231_ADD<<1,0,I2C_MEMADD_SIZE_8BIT,receive_data,7);
 		ht->sec=BCD2DEC(receive_data[0]);
 		ht->min=BCD2DEC(receive_data[1]);
-		ht->hour=BCD2DEC(receive_data[2]);
-		//ht->scan_now = true;
+		ht->hour=BCD2DEC(receive_data[2]); //ht->scan_now = true;
 		last_4 = HAL_GetTick();
 	}
 }
@@ -639,7 +640,7 @@ void relay_on(controller* ht){
 		ht->relay_gui_on = false;
 	}else{
 	//Sensor Conditioning (Still Auto)
-		if((ht->temp > 40 || ht->rh < 40 || ht->lx > 500 || (ht->soil < 40 && ht->soil > 10)) && ht->rh > 0 && !(ht->sleep)){
+		if((ht->temp > 40 || ht->rh < 40 || ht->lx > 1000 || (ht->soil < 20 && ht->soil > 10)) && ht->rh > 0 && !(ht->sleep)){
 			HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2, GPIO_PIN_SET);
 			ht->state = 1;
 		}
@@ -747,9 +748,10 @@ bool read_dht22(float* t, float* rh){
 
 uint16_t read_bh1750(BH1750_device_t* test_dev){
 	static uint32_t last = 0;
-	if((uint32_t)(HAL_GetTick() - last) > 200)//200ms
+	if((uint32_t)(HAL_GetTick() - last) > 200)
 	{
-		test_dev->poll(test_dev);//Read and compute luminosity
+		//Read and compute luminosity in 200ms
+		test_dev->poll(test_dev);
 		last = HAL_GetTick();
 	}
 	return test_dev->value;
